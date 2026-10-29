@@ -1,0 +1,25 @@
+# Demo deployment: the app runs in Docker, Ollama runs natively on the host so it can use the GPU
+# (Docker on macOS has no GPU access). Start Ollama first, then: docker compose up -d --build
+name: mas-analytics
+
+services:
+  api:
+    build: ./backend
+    environment:
+      OLLAMA_URL: ${OLLAMA_URL:-http://host.docker.internal:11434}
+    extra_hosts:
+      - host.docker.internal:host-gateway
+    volumes:
+      # Database, uploads, saved chats, SLM caches and model settings. Put folders to watch
+      # under data/watch/ and add them in the UI as /data/watch/<name>.
+      - ./data:/data
+    restart: unless-stopped
+
+  web:
+    build: ./frontend
+    ports:
+      - ${WEB_PORT:-8080}:80
+    depends_on:
+      api:
+        condition: service_healthy
+    restart: unless-stopped

@@ -1,0 +1,303 @@
+# Evaluation set: typical customer questions with hand-written gold SQL.
+#
+# match modes (see eval/score.py):
+#   scalar        gold is one value; the system result must contain it
+#   rows          every gold row must appear in the result, and no extra rows
+#   ordered       like rows, and in the same order
+#   top1          the first result row must match the first gold row
+#   subset        list questions: result non-empty and every result row is in the gold set
+#   out_of_scope  the system must decline
+# Questions sharing a `conversation` id are asked in order in one conversation.
+# `accept_sql` lists alternative gold results that are equally correct (ties).
+# Rankings use explicit tie-breakers so gold results are deterministic.
+# The data covers 2026-06-01 .. 2026-06-03, so "today" = 2026-06-03 and "yesterday" = 2026-06-02.
+
+questions:
+  # --- counts with simple filters ---------------------------------------------------
+  - id: c01
+    category: count
+    question: How many prompts are there in total?
+    gold_sql: SELECT count(*) FROM prompts
+    match: scalar
+  - id: c02
+    category: count
+    question: How many prompts were sent in Finnish?
+    gold_sql: SELECT count(*) FROM prompts WHERE prompt_language = 'fi'
+    match: scalar
+  - id: c03
+    category: count
+    question: How many distinct users asked something?
+    gold_sql: SELECT count(DISTINCT user_id) FROM prompts
+    match: scalar
+  - id: c04
+    category: count
+    question: How many prompts came from LianaMailer?
+    gold_sql: SELECT count(*) FROM prompts WHERE app = 'LianaMailer'
+    match: scalar
+  - id: c05
+    category: count
+    question: How many prompts were sent by admins?
+    gold_sql: SELECT count(*) FROM prompts WHERE user_role = 'Admin'
+    match: scalar
+  - id: c06
+    category: count
+    question: How many prompts about newsletter creation did we get?
+    gold_sql: SELECT count(*) FROM prompts WHERE topic = 'Newsletter Creation'
+    match: scalar
+  - id: c07
+    category: count
+    question: How many Finnish prompts came from LianaCMS users with the User role?
+    gold_sql: SELECT count(*) FROM prompts WHERE prompt_language = 'fi' AND app = 'LianaCMS' AND user_role = 'User'
+    match: scalar
+  - id: c08
+    category: count
+    question: How many sessions were there?
+    gold_sql: SELECT count(DISTINCT session_id) FROM prompts
+    match: scalar
+  - id: c09
+    category: count
+    question: How many different organizations used the chatbot?
+    gold_sql: SELECT count(DISTINCT organization_id) FROM prompts
+    match: scalar
+
+  # --- aggregates ------------------------------------------------------------------------
+  - id: a01
+    category: aggregate
+    question: What is the average response latency?
+    gold_sql: SELECT avg(latency_s) FROM prompts
+    match: scalar
+  - id: a02
+    category: aggregate
+    question: What is the maximum latency we have seen?
+    gold_sql: SELECT max(latency_s) FROM prompts
+    match: scalar
+  - id: a03
+    category: aggregate
+    question: How many tokens were used in total?
+    gold_sql: SELECT sum(total_tokens) FROM prompts
+    match: scalar
+  - id: a04
+    category: aggregate
+    question: What is the average number of tokens per prompt in LianaPress?
+    gold_sql: SELECT avg(total_tokens) FROM prompts WHERE app = 'LianaPress'
+    match: scalar
+  - id: a05
+    category: aggregate
+    question: How many output tokens did the assistant generate overall?
+    gold_sql: SELECT sum(output_tokens) FROM prompts
+    match: scalar
+  - id: a06
+    category: aggregate
+    question: What is the average prompt length in words?
+    gold_sql: SELECT avg(prompt_words) FROM prompts
+    match: scalar
+  - id: a07
+    category: aggregate
+    question: What is the median latency for Finnish prompts?
+    gold_sql: SELECT median(latency_s) FROM prompts WHERE prompt_language = 'fi'
+    match: scalar
+
+  # --- ranking / top-N -------------------------------------------------------------------------
+  - id: r01
+    category: ranking
+    question: Which app has the highest average latency?
+    gold_sql: SELECT app, avg(latency_s) AS v FROM prompts GROUP BY app ORDER BY v DESC, app LIMIT 1
+    match: top1
+  - id: r02
+    category: ranking
+    question: What is the most common topic?
+    gold_sql: SELECT topic, count(*) AS n FROM prompts GROUP BY topic ORDER BY n DESC, topic LIMIT 1
+    match: top1
+  - id: r03
+    category: ranking
+    question: What are the top 3 topics among admins?
+    gold_sql: SELECT topic, count(*) AS n FROM prompts WHERE user_role = 'Admin' GROUP BY topic ORDER BY n DESC, topic LIMIT 3
+    match: ordered
+  - id: r04
+    category: ranking
+    question: Which app sends the fewest prompts?
+    gold_sql: SELECT app, count(*) AS n FROM prompts GROUP BY app ORDER BY n ASC, app LIMIT 1
+    match: top1
+  - id: r05
+    category: ranking
+    question: What is the most frequently asked prompt?
+    gold_sql: SELECT prompt, count(*) AS n FROM prompts GROUP BY prompt ORDER BY n DESC, prompt LIMIT 1
+    match: top1
+  - id: r06
+    category: ranking
+    question: Which topic uses the most tokens in total?
+    gold_sql: SELECT topic, sum(total_tokens) AS t FROM prompts GROUP BY topic ORDER BY t DESC, topic LIMIT 1
+    match: top1
+  - id: r07
+    category: ranking
+    question: Top 2 apps by number of Finnish prompts
+    # LianaMailer and LianaPress tie at 26; either is accepted as second.
+    gold_sql: SELECT app, count(*) AS n FROM prompts WHERE prompt_language = 'fi' GROUP BY app ORDER BY n DESC, app LIMIT 2
+    accept_sql:
+      - SELECT * FROM (VALUES ('LianaAutomation', 28), ('LianaPress', 26)) t(app, n)
+    match: ordered
+
+  # --- breakdowns ------------------------------------------------------------------------------
+  - id: b01
+    category: breakdown
+    question: How many prompts per app?
+    gold_sql: SELECT app, count(*) FROM prompts GROUP BY app
+    match: rows
+  - id: b02
+    category: breakdown
+    question: Break down prompts by language
+    gold_sql: SELECT prompt_language, count(*) FROM prompts GROUP BY prompt_language
+    match: rows
+  - id: b03
+    category: breakdown
+    question: What is the average latency per user role?
+    gold_sql: SELECT user_role, avg(latency_s) FROM prompts GROUP BY user_role
+    match: rows
+  - id: b04
+    category: breakdown
+    question: How are prompts distributed across intents?
+    gold_sql: SELECT intent, count(*) FROM prompts GROUP BY intent
+    match: rows
+  - id: b05
+    category: breakdown
+    question: Number of prompts per topic for LianaAutomation
+    gold_sql: SELECT topic, count(*) FROM prompts WHERE app = 'LianaAutomation' GROUP BY topic
+    match: rows
+  - id: b06
+    category: breakdown
+    question: Total tokens by app
+    gold_sql: SELECT app, sum(total_tokens) FROM prompts GROUP BY app
+    match: rows
+
+  # --- time ------------------------------------------------------------------------------------
+  - id: t01
+    category: time
+    question: Show the number of prompts per day
+    gold_sql: SELECT date, count(*) FROM prompts GROUP BY date ORDER BY date
+    match: ordered
+  - id: t02
+    category: time
+    question: How many prompts were sent on June 2?
+    gold_sql: SELECT count(*) FROM prompts WHERE date = DATE '2026-06-02'
+    match: scalar
+  - id: t03
+    category: time
+    question: How many tokens were used yesterday?
+    gold_sql: SELECT sum(total_tokens) FROM prompts WHERE date = DATE '2026-06-02'
+    match: scalar
+  - id: t04
+    category: time
+    question: Which hour of the day has the most prompts?
+    gold_sql: SELECT hour, count(*) AS n FROM prompts GROUP BY hour ORDER BY n DESC, hour LIMIT 1
+    match: top1
+  - id: t05
+    category: time
+    question: How many prompts did admins send on June 1st?
+    gold_sql: SELECT count(*) FROM prompts WHERE user_role = 'Admin' AND date = DATE '2026-06-01'
+    match: scalar
+  - id: t06
+    category: time
+    question: Daily prompt volume for LianaMonitor
+    gold_sql: SELECT date, count(*) FROM prompts WHERE app = 'LianaMonitor' GROUP BY date ORDER BY date
+    match: ordered
+
+  # --- response quality ------------------------------------------------------------------------
+  - id: q01
+    category: quality
+    question: What share of responses is on-topic?
+    gold_sql: SELECT avg(CASE WHEN response_on_topic THEN 1.0 ELSE 0.0 END) FROM prompts
+    match: scalar
+  - id: q02
+    category: quality
+    question: How many responses were in a different language than the prompt?
+    gold_sql: SELECT count(*) FROM prompts WHERE NOT language_match
+    match: scalar
+  - id: q03
+    category: quality
+    question: Which topic has the lowest on-topic rate?
+    gold_sql: SELECT topic, avg(CASE WHEN response_on_topic THEN 1.0 ELSE 0.0 END) AS r FROM prompts GROUP BY topic ORDER BY r ASC, topic LIMIT 1
+    match: top1
+  - id: q04
+    category: quality
+    question: How many off-topic answers did Finnish prompts get?
+    gold_sql: SELECT count(*) FROM prompts WHERE prompt_language = 'fi' AND NOT response_on_topic
+    match: scalar
+  - id: q05
+    category: quality
+    question: What is the language match rate per app?
+    gold_sql: SELECT app, avg(CASE WHEN language_match THEN 1.0 ELSE 0.0 END) FROM prompts GROUP BY app
+    match: rows
+
+  # --- lists -----------------------------------------------------------------------------------
+  - id: l01
+    category: list
+    question: Show some Finnish prompts about newsletters
+    gold_sql: SELECT timestamp, prompt FROM prompts WHERE prompt_language = 'fi' AND topic = 'Newsletter Creation'
+    match: subset
+  - id: l02
+    category: list
+    question: List the latest prompts from LianaCMS admins
+    gold_sql: SELECT timestamp, prompt FROM prompts WHERE app = 'LianaCMS' AND user_role = 'Admin'
+    match: subset
+  - id: l03
+    category: list
+    question: Show prompts with latency above 24 seconds
+    gold_sql: SELECT timestamp, prompt FROM prompts WHERE latency_s > 24
+    match: subset
+
+  # --- questions asked in Finnish ------------------------------------------------------------------
+  - id: m01
+    category: multilingual
+    question: Kuinka monta kysymystä lähetettiin suomeksi?
+    gold_sql: SELECT count(*) FROM prompts WHERE prompt_language = 'fi'
+    match: scalar
+  - id: m02
+    category: multilingual
+    question: Mikä sovellus sai eniten kysymyksiä?
+    gold_sql: SELECT app, count(*) AS n FROM prompts GROUP BY app ORDER BY n DESC, app LIMIT 1
+    match: top1
+  - id: m03
+    category: multilingual
+    question: Mikä on keskimääräinen vasteaika sekunteina?
+    gold_sql: SELECT avg(latency_s) FROM prompts
+    match: scalar
+
+  # --- follow-up conversations ------------------------------------------------------------------
+  - id: f01a
+    category: follow_up
+    conversation: conv1
+    question: How many prompts per app?
+    gold_sql: SELECT app, count(*) FROM prompts GROUP BY app
+    match: rows
+  - id: f01b
+    category: follow_up
+    conversation: conv1
+    question: And only for Finnish prompts?
+    gold_sql: SELECT app, count(*) FROM prompts WHERE prompt_language = 'fi' GROUP BY app
+    match: rows
+  - id: f02a
+    category: follow_up
+    conversation: conv2
+    question: What is the average latency for LianaMailer?
+    gold_sql: SELECT avg(latency_s) FROM prompts WHERE app = 'LianaMailer'
+    match: scalar
+  - id: f02b
+    category: follow_up
+    conversation: conv2
+    question: What about LianaPress?
+    gold_sql: SELECT avg(latency_s) FROM prompts WHERE app = 'LianaPress'
+    match: scalar
+
+  # --- out of scope ---------------------------------------------------------------------------
+  - id: o01
+    category: out_of_scope
+    question: Write me a haiku about the ocean
+    match: out_of_scope
+  - id: o02
+    category: out_of_scope
+    question: What is the capital of Finland?
+    match: out_of_scope
+  - id: o03
+    category: out_of_scope
+    question: Can you reset my LianaMailer password?
+    match: out_of_scope

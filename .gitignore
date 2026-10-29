@@ -1,0 +1,20 @@
+# Data stays local
+data/*
+!data/.gitkeep
+!data/samples/
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+.pytest_cache/
+.ruff_cache/
+
+# Node
+node_modules/
+frontend/dist/
+
+# Eval outputs (regenerate with eval/run_eval.py)
+backend/eval/results/
+
+.DS_Store

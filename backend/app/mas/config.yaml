@@ -1,0 +1,36 @@
+# Which Ollama model powers each agent. Pick a profile with MAS_PROFILE or the
+# `profile` field of a chat request; the evaluation runner sweeps several profiles.
+default_profile: mixed
+
+embedding_model: nomic-embed-text
+
+# Offline feature extraction (translation, intents, topic labels). Runs once per
+# distinct text and is cached, so a larger model is affordable; 3B models
+# mistranslated Finnish prompts in our tests.
+data_processing_model: llama3.1:8b
+
+# Deterministic safeguards of the MAS; set MAS_GROUND_FILTERS=0 to disable for an ablation.
+mas_options:
+  ground_filters: true
+
+profiles:
+  # Every agent and the baseline on a ~3B model.
+  small:
+    query_understanding: llama3.2:3b
+    visualization_planning: llama3.2:3b
+    answer_generation: llama3.2:3b
+    baseline: llama3.2:3b
+
+  # Smallest model everywhere it can cope.
+  tiny:
+    query_understanding: gemma2:2b
+    visualization_planning: gemma2:2b
+    answer_generation: gemma2:2b
+    baseline: gemma2:2b
+
+  # Heterogeneous: a code-tuned 7B model for structured parsing, 2-3B models elsewhere.
+  mixed:
+    query_understanding: qwen2.5-coder:7b
+    visualization_planning: gemma2:2b
+    answer_generation: llama3.2:3b
+    baseline: qwen2.5-coder:7b
