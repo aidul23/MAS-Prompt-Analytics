@@ -8,6 +8,7 @@ import { ChatSidebar } from '../components/ChatSidebar'
 import { DataTableView } from '../components/DataTableView'
 import { ResultChart } from '../components/ResultChart'
 import { label, number } from '../format'
+import { newId } from '../id'
 import { useAsync } from '../useAsync'
 
 export type Message = { id: string; question: string; mode: UiMode; responses: ChatResponse[]; pending: ChatMode[]; error?: string }
@@ -111,7 +112,7 @@ export function Thread({
     setInput('')
     if (messages.length === 0) onStarted()
     const modes: ChatMode[] = mode === 'compare' ? ['mas', 'baseline'] : [mode]
-    const id = crypto.randomUUID()
+    const id = newId()
     setMessages((ms) => [...ms, { id, question: q, mode, responses: [], pending: modes }])
     for (const m of modes) {
       try {
@@ -222,7 +223,7 @@ export function Chat() {
 
   // A new chat gets its id up front; the URL switches to /chat/<id> once the first question is asked,
   // without remounting the thread, and the chat is stored by the API with its first response.
-  const [draftId, setDraftId] = useState(() => crypto.randomUUID())
+  const [draftId, setDraftId] = useState(() => newId())
   const isDraft = !chatId || chatId === draftId
   const threadId = chatId ?? draftId
   const [version, setVersion] = useState(0)
@@ -232,7 +233,7 @@ export function Chat() {
   const title = list.data?.find((c) => c.id === threadId)?.title
 
   const newChat = () => {
-    setDraftId(crypto.randomUUID())
+    setDraftId(newId())
     navigate('/chat')
   }
   const remove = async (id: string) => {

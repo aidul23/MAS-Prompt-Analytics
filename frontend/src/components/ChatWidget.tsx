@@ -3,6 +3,7 @@ import { useLocation, useNavigate } from 'react-router-dom'
 import type { SavedChat, UiMode } from '../api'
 import { api } from '../api'
 import { Thread, type Message } from '../pages/Chat'
+import { newId } from '../id'
 import { useAsync } from '../useAsync'
 import { Segmented } from './Card'
 
@@ -15,7 +16,7 @@ type View =
 
 const toMessages = (chat: SavedChat): Message[] => chat.messages.map((m) => ({ ...m, pending: [] }))
 
-const draft = (): View => ({ kind: 'draft', id: crypto.randomUUID(), started: false })
+const draft = (): View => ({ kind: 'draft', id: newId(), started: false })
 
 function IconButton({ title, onClick, children }: { title: string; onClick: () => void; children: ReactNode }) {
   return (
