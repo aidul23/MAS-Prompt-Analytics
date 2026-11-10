@@ -66,6 +66,17 @@ docker compose down            # stop; the data stays in ./data
 - To use Ollama on another machine, set `OLLAMA_URL` (for example `OLLAMA_URL=http://gpu-box:11434 docker compose up -d`).
 - There is no login. Keep the demo on localhost or a trusted network; anyone who can open the page can upload data and download or delete models.
 
+### On a Linux server
+
+`docker-compose.server.yml` adapts the setup for a Linux server that runs Ollama itself. Both containers use the host network, so the API reaches Ollama on `127.0.0.1` and Ollama is never exposed; the API listens only on `127.0.0.1:8000`, and the UI on port 8080 (set `LISTEN`, e.g. `LISTEN=100.69.174.66:8080` to serve only on one address). The UI asks for a username and password from `deploy/htpasswd`, which is not in git:
+
+```bash
+mkdir -p deploy && printf 'mas:%s\n' "$(openssl passwd -apr1 'choose-a-password')" > deploy/htpasswd
+docker compose -f docker-compose.yml -f docker-compose.server.yml up -d --build
+```
+
+The containers restart on their own after a crash or a reboot. To update, copy the new code to the server and run the same `up -d --build` command; `data/` is kept.
+
 ## Using the chat
 
 The chat opens from the round button in the bottom-right corner of every page, so you can ask questions while looking at the dashboard. The conversation stays open as you move between pages and after a reload. In the chat panel, the clock icon lists recent chats, **+** starts a new one, and the expand icon opens the full chat page (`/chat`), which adds the chat sidebar and the profile selector.

@@ -3,6 +3,9 @@ data/*
 !data/.gitkeep
 !data/samples/
 
+# Server login (see docker-compose.server.yml)
+deploy/htpasswd
+
 # Python
 __pycache__/
 *.pyc

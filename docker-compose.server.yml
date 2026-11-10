@@ -1,0 +1,23 @@
+# Linux server override: both containers use the host network, so the API reaches the host's Ollama on
+# 127.0.0.1 (Ollama stays private) and only the UI port is reachable from outside. The UI asks for a
+# login from deploy/htpasswd (create it with: htpasswd -c deploy/htpasswd <user>, or openssl passwd -apr1).
+#   docker compose -f docker-compose.yml -f docker-compose.server.yml up -d --build
+services:
+  api:
+    network_mode: host
+    extra_hosts: !reset []
+    environment:
+      OLLAMA_URL: ${OLLAMA_URL:-http://127.0.0.1:11434}
+    command: ["uvicorn", "app.api.main:app", "--host", "127.0.0.1", "--port", "${API_PORT:-8000}", "--workers", "1"]
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:${API_PORT:-8000}/api/health', timeout=4)"]
+
+  web:
+    network_mode: host
+    ports: !reset []
+    environment:
+      LISTEN: ${LISTEN:-0.0.0.0:8080}
+      API_UPSTREAM: 127.0.0.1:${API_PORT:-8000}
+      AUTH_BASIC: ${AUTH_BASIC:-MAS Analytics}
+    volumes:
+      - ./deploy/htpasswd:/etc/nginx/auth/htpasswd:ro
