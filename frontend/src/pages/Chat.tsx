@@ -10,7 +10,7 @@ import { ResultChart } from '../components/ResultChart'
 import { label, number } from '../format'
 import { useAsync } from '../useAsync'
 
-type Message = { id: string; question: string; mode: UiMode; responses: ChatResponse[]; pending: ChatMode[]; error?: string }
+export type Message = { id: string; question: string; mode: UiMode; responses: ChatResponse[]; pending: ChatMode[]; error?: string }
 
 const SUGGESTIONS = [
   'How many prompts were sent in Finnish?',
@@ -72,13 +72,15 @@ function ResponseView({ resp }: { resp: ChatResponse }) {
   )
 }
 
-function Thread({
+export function Thread({
   chatId,
   initial,
   mode,
   profile,
   onStarted,
   onSaved,
+  onBusyChange,
+  compact = false,
 }: {
   chatId: string
   initial: Message[]
@@ -86,15 +88,22 @@ function Thread({
   profile: string
   onStarted: () => void
   onSaved: () => void
+  onBusyChange?: (busy: boolean) => void
+  compact?: boolean
 }) {
   const [input, setInput] = useState('')
   const [messages, setMessages] = useState<Message[]>(initial)
-  const bottom = useRef<HTMLDivElement>(null)
+  const scroller = useRef<HTMLDivElement>(null)
   const busy = messages.some((m) => m.pending.length > 0)
 
   useEffect(() => {
-    bottom.current?.scrollIntoView({ behavior: 'smooth' })
+    scroller.current?.scrollTo({ top: scroller.current.scrollHeight, behavior: 'smooth' })
   }, [messages])
+
+  useEffect(() => {
+    onBusyChange?.(busy)
+    return () => onBusyChange?.(false)
+  }, [busy, onBusyChange])
 
   const ask = async (question: string) => {
     const q = question.trim()
@@ -117,12 +126,12 @@ function Thread({
 
   return (
     <>
-      <div className="flex-1 space-y-6 overflow-y-auto py-6">
+      <div ref={scroller} className={`flex-1 overflow-y-auto ${compact ? 'space-y-4 px-4 py-4' : 'space-y-6 py-6'}`}>
         {messages.length === 0 && (
-          <div className="mx-auto max-w-xl pt-10 text-center">
+          <div className={`mx-auto max-w-xl text-center ${compact ? 'pt-4' : 'pt-10'}`}>
             <p className="text-sm text-slate-500">Try one of these, or ask your own. Follow-up questions keep the context.</p>
             <div className="mt-4 flex flex-wrap justify-center gap-2">
-              {SUGGESTIONS.map((s) => (
+              {(compact ? SUGGESTIONS.slice(0, 4) : SUGGESTIONS).map((s) => (
                 <button key={s} type="button" onClick={() => ask(s)} className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs text-slate-700 hover:border-indigo-300 hover:text-indigo-700">
                   {s}
                 </button>
@@ -135,7 +144,7 @@ function Thread({
             <div className="flex justify-end">
               <div className="max-w-[80%] rounded-2xl rounded-br-sm bg-indigo-600 px-4 py-2 text-sm text-white">{m.question}</div>
             </div>
-            <div className={`grid gap-3 ${m.mode === 'compare' ? 'md:grid-cols-2' : ''}`}>
+            <div className={`grid gap-3 ${m.mode === 'compare' && !compact ? 'md:grid-cols-2' : ''}`}>
               {(m.mode === 'compare' ? (['mas', 'baseline'] as ChatMode[]) : [m.mode as ChatMode]).map((cm) => {
                 const resp = m.responses.find((r) => r.mode === cm)
                 return (
@@ -160,7 +169,6 @@ function Thread({
             </div>
           </div>
         ))}
-        <div ref={bottom} />
       </div>
 
       <form
@@ -168,12 +176,12 @@ function Thread({
           e.preventDefault()
           ask(input)
         }}
-        className="flex gap-2 border-t border-slate-200 py-4"
+        className={`flex gap-2 border-t border-slate-200 ${compact ? 'p-3' : 'py-4'}`}
       >
         <input
           value={input}
           onChange={(e) => setInput(e.target.value)}
-          placeholder="e.g. Which topics get the most Finnish prompts?"
+          placeholder={compact ? 'Ask about the traces…' : 'e.g. Which topics get the most Finnish prompts?'}
           className="flex-1 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100"
         />
         <button type="submit" disabled={busy || !input.trim()} className="rounded-xl bg-indigo-600 px-5 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-40">

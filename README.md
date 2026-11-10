@@ -48,9 +48,29 @@ uv run uvicorn app.api.main:app --port 8000 --reload --reload-dir app
 cd frontend && npm install && npm run dev  # http://localhost:5173
 ```
 
+## Run with Docker (demo)
+
+The API and the UI run in containers. Ollama stays on the host: Docker on macOS cannot use the Apple GPU, so models inside a container would run on the CPU only and be several times slower.
+
+Requirements: Docker Desktop, and Ollama running on the host with the models pulled (step 1 above, or pull them later from the Models page).
+
+```bash
+docker compose up -d --build   # http://localhost:8080 (set WEB_PORT to change it)
+docker compose logs -f api     # follow the API log
+docker compose down            # stop; the data stays in ./data
+```
+
+- `./data` on the host is mounted at `/data` in the API container, so the database, uploads, saved chats, SLM caches and model profiles are shared with a local (non-Docker) run. Stop the local dev servers before starting the containers so that two servers do not sync the same data.
+- To use a watched folder, put it under `data/` (for example `data/watch/exports`) and add it on the Data sources page as `/data/watch/exports`. Folders elsewhere on the host need an extra volume in `docker-compose.yml`.
+- The API runs as a single worker on purpose: sync, folder checks, model downloads and chat memory live in that process.
+- To use Ollama on another machine, set `OLLAMA_URL` (for example `OLLAMA_URL=http://gpu-box:11434 docker compose up -d`).
+- There is no login. Keep the demo on localhost or a trusted network; anyone who can open the page can upload data and download or delete models.
+
 ## Using the chat
 
-The chat page has three modes. **Multi-agent** uses the agent pipeline, **Single model** uses the baseline, and **Compare** asks both and shows the answers side by side.
+The chat opens from the round button in the bottom-right corner of every page, so you can ask questions while looking at the dashboard. The conversation stays open as you move between pages and after a reload. In the chat panel, the clock icon lists recent chats, **+** starts a new one, and the expand icon opens the full chat page (`/chat`), which adds the chat sidebar and the profile selector.
+
+The chat has three modes. **Multi-agent** uses the agent pipeline, **Single model** uses the baseline, and **Compare** asks both and shows the answers side by side.
 The profile selector picks which models power the agents (see `backend/app/mas/config.yaml`):
 
 | Profile | Query understanding | Visualization | Answer | Baseline |

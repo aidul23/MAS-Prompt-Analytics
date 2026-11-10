@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { BrowserRouter, Link, NavLink, Route, Routes } from 'react-router-dom'
 import { api, type Health } from './api'
+import { ChatWidget } from './components/ChatWidget'
 import { Chat } from './pages/Chat'
 import { Dashboard } from './pages/Dashboard'
 import { DataSources } from './pages/DataSources'
@@ -58,9 +59,6 @@ function Nav({ health }: { health: Health | null }) {
             <NavLink to="/" end className={link}>
               Dashboard
             </NavLink>
-            <NavLink to="/chat" className={link}>
-              Ask the data
-            </NavLink>
             <NavLink to="/data" className={link}>
               Data sources
             </NavLink>
@@ -105,6 +103,7 @@ export default function App() {
         <Route path="/data" element={<DataSources />} />
         <Route path="/models" element={<Models />} />
       </Routes>
+      <ChatWidget disabled={noData} />
     </BrowserRouter>
   )
 }
