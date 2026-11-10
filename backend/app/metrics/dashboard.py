@@ -6,6 +6,8 @@ from app.metrics.filters import Filters
 BREAKDOWN_DIMENSIONS = (
     "topic", "app", "intent", "prompt_language", "output_language", "user_role", "response_topic", "weekday", "hour",
 )
+# date_trunc units; "week" starts on Monday (ISO).
+GRANULARITIES = ("hour", "day", "week")
 
 
 def _records(sql: str, params: list) -> list[dict]:
@@ -37,7 +39,7 @@ def summary(f: Filters) -> dict:
 
 
 def volume(f: Filters, granularity: str = "hour") -> list[dict]:
-    unit = "day" if granularity == "day" else "hour"
+    unit = granularity if granularity in GRANULARITIES else "hour"
     where, p = f.where()
     return _records(
         f"""
@@ -89,7 +91,7 @@ def histogram(f: Filters, column: str, bins: int = 12) -> list[dict]:
 
 
 def tokens_over_time(f: Filters, granularity: str = "hour") -> list[dict]:
-    unit = "day" if granularity == "day" else "hour"
+    unit = granularity if granularity in GRANULARITIES else "hour"
     where, p = f.where()
     return _records(
         f"""

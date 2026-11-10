@@ -20,7 +20,7 @@ def filters(
     return Filters(start=start, end=end, app=app, user_role=user_role, prompt_language=prompt_language, topic=topic)
 
 
-Granularity = Literal["hour", "day"]
+Granularity = Literal["hour", "day", "week"]
 
 
 @router.get("/filters")

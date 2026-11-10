@@ -1,3 +1,5 @@
+export type Granularity = 'hour' | 'day' | 'week'
+
 export type Filters = {
   start?: string
   end?: string
@@ -209,10 +211,10 @@ export const api = {
   health: () => get<Health>('/api/health'),
   filters: () => get<FilterOptions>('/api/dashboard/filters'),
   summary: (f: Filters) => get<Summary>(`/api/dashboard/summary${query(f)}`),
-  volume: (f: Filters, granularity: 'hour' | 'day') => get<VolumePoint[]>(`/api/dashboard/volume${query(f, { granularity })}`),
+  volume: (f: Filters, granularity: Granularity) => get<VolumePoint[]>(`/api/dashboard/volume${query(f, { granularity })}`),
   breakdown: (f: Filters, dimension: string) => get<BreakdownRow[]>(`/api/dashboard/breakdown/${dimension}${query(f)}`),
   histogram: (f: Filters, column: string, bins = 12) => get<HistogramBin[]>(`/api/dashboard/histogram/${column}${query(f, { bins })}`),
-  tokens: (f: Filters, granularity: 'hour' | 'day') => get<TokenPoint[]>(`/api/dashboard/tokens${query(f, { granularity })}`),
+  tokens: (f: Filters, granularity: Granularity) => get<TokenPoint[]>(`/api/dashboard/tokens${query(f, { granularity })}`),
   topPrompts: (f: Filters, limit = 20) => get<TopPrompt[]>(`/api/dashboard/top-prompts${query(f, { limit })}`),
   topicAlignment: (f: Filters) => get<AlignmentCell[]>(`/api/dashboard/topic-alignment${query(f)}`),
   sessions: (f: Filters, limit = 25, offset = 0) =>

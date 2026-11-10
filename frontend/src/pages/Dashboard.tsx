@@ -16,7 +16,7 @@ import {
   YAxis,
 } from 'recharts'
 // Add AlignmentCell back to this import when the alignment matrix is re-enabled.
-import type { Filters, Summary } from '../api'
+import type { Filters, Granularity, Summary } from '../api'
 import { api, emptyFilters } from '../api'
 import { Card, Loadable, Segmented } from '../components/Card'
 import { DataTableView } from '../components/DataTableView'
@@ -115,11 +115,12 @@ function AlignmentMatrix({ cells }: { cells: AlignmentCell[] }) {
 
 export function Dashboard() {
   const [filters, setFilters] = useState<Filters>(emptyFilters)
-  const [granularity, setGranularity] = useState<'hour' | 'day'>('hour')
+  const [granularity, setGranularity] = useState<Granularity>('hour')
   const [dim, setDim] = useState<BreakdownDim>('app')
   const [sessionPage, setSessionPage] = useState(0)
   const location = useLocation()
   const key = JSON.stringify(filters)
+  const bucketLabel = (v: unknown) => (granularity === 'week' ? `Week of ${dateTime(v, false)}` : dateTime(v, granularity === 'hour'))
 
   const options = useAsync(() => api.filters(), [])
   const summary = useAsync(() => api.summary(filters), [key])
@@ -167,7 +168,7 @@ export function Dashboard() {
         id="volume"
         title="Prompt volume"
         subtitle="Prompts and sessions over time"
-        actions={<Segmented value={granularity} onChange={setGranularity} options={[{ value: 'hour', label: 'Hourly' }, { value: 'day', label: 'Daily' }]} />}
+        actions={<Segmented value={granularity} onChange={setGranularity} options={[{ value: 'hour', label: 'Hourly' }, { value: 'day', label: 'Daily' }, { value: 'week', label: 'Weekly' }]} />}
       >
         <Loadable state={volume}>
           {(rows) => (
@@ -176,8 +177,8 @@ export function Dashboard() {
                 {GRID}
                 <XAxis dataKey="bucket" tick={AXIS} tickFormatter={(v) => dateTime(v, granularity === 'hour')} minTickGap={30} />
                 <YAxis tick={AXIS} allowDecimals={false} width={36} />
-                <Tooltip labelFormatter={(v) => dateTime(v)} />
-                <Area isAnimationActive={false} type="monotone" dataKey="prompts" stroke={PALETTE[0]} fill={PALETTE[0]} fillOpacity={0.15} strokeWidth={2} />
+                <Tooltip labelFormatter={bucketLabel} />
+                <Area isAnimationActive={false} type="monotone" dataKey="prompts" stroke={PALETTE[0]} fill={PALETTE[0]} fillOpacity={0.15} strokeWidth={2} dot={rows.length < 3} />
               </AreaChart>
             </ResponsiveContainer>
           )}
@@ -295,10 +296,10 @@ export function Dashboard() {
                   {GRID}
                   <XAxis dataKey="bucket" tick={AXIS} tickFormatter={(v) => dateTime(v, granularity === 'hour')} minTickGap={30} />
                   <YAxis tick={AXIS} tickFormatter={compact} width={44} />
-                  <Tooltip labelFormatter={(v) => dateTime(v)} formatter={(v) => number(v)} />
+                  <Tooltip labelFormatter={bucketLabel} formatter={(v) => number(v)} />
                   <Legend wrapperStyle={{ fontSize: 12 }} />
-                  <Area isAnimationActive={false} type="monotone" dataKey="input_tokens" stackId="t" stroke={PALETTE[0]} fill={PALETTE[0]} fillOpacity={0.25} />
-                  <Area isAnimationActive={false} type="monotone" dataKey="output_tokens" stackId="t" stroke={PALETTE[3]} fill={PALETTE[3]} fillOpacity={0.35} />
+                  <Area isAnimationActive={false} type="monotone" dataKey="input_tokens" stackId="t" stroke={PALETTE[0]} fill={PALETTE[0]} fillOpacity={0.25} dot={rows.length < 3} />
+                  <Area isAnimationActive={false} type="monotone" dataKey="output_tokens" stackId="t" stroke={PALETTE[3]} fill={PALETTE[3]} fillOpacity={0.35} dot={rows.length < 3} />
                 </AreaChart>
               </ResponsiveContainer>
             )}
