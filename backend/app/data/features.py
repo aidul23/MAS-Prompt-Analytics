@@ -14,6 +14,9 @@ Responses are matched to topics via embeddings rather than an SLM judge: in our 
 import hashlib
 import json
 import logging
+import os
+import threading
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
 import numpy as np
@@ -31,6 +34,8 @@ EXPECTED_LANGUAGES = ("en", "fi", "sv")
 INTENTS = ("how_to", "explanation", "examples", "best_practices", "design_help", "troubleshooting", "other")
 TOPIC_DISTANCE_THRESHOLD = 0.15
 EMBED_PREFIX = "clustering: "
+# Concurrent Ollama chat calls during sync. Raise with MAS_CHAT_WORKERS if the GPU keeps up.
+CHAT_WORKERS = max(1, int(os.environ.get("MAS_CHAT_WORKERS", "8")))
 
 
 def detect_language(text: str) -> str:
@@ -55,16 +60,21 @@ class FeatureCache:
     def __init__(self, path: Path):
         self.path = path
         self.data = json.loads(path.read_text("utf-8")) if path.exists() else {}
+        self._lock = threading.Lock()
 
     def get(self, section: str, key: str):
-        return self.data.get(section, {}).get(key)
+        with self._lock:
+            return self.data.get(section, {}).get(key)
 
     def put(self, section: str, key: str, value) -> None:
-        self.data.setdefault(section, {})[key] = value
+        with self._lock:
+            self.data.setdefault(section, {})[key] = value
 
     def save(self) -> None:
+        with self._lock:
+            payload = json.dumps(self.data, ensure_ascii=False, indent=1)
         self.path.parent.mkdir(parents=True, exist_ok=True)
-        self.path.write_text(json.dumps(self.data, ensure_ascii=False, indent=1), "utf-8")
+        self.path.write_text(payload, "utf-8")
 
 
 def _key(*parts: str) -> str:
@@ -101,12 +111,36 @@ LABEL_SYSTEM = (
 
 
 def _cached_chat(cache: FeatureCache, section: str, model: str, system: str, text: str, schema: dict) -> dict:
-    key = _key(model, text)
-    hit = cache.get(section, key)
-    if hit is None:
-        hit = llm.chat(model, [{"role": "system", "content": system}, {"role": "user", "content": text}], schema=schema).parsed
-        cache.put(section, key, hit)
-    return hit
+    return _cached_chats(cache, section, model, system, [text], schema)[text]
+
+
+def _cached_chats(
+    cache: FeatureCache, section: str, model: str, system: str, texts: list[str], schema: dict, *, workers: int | None = None
+) -> dict[str, dict]:
+    """Run uncached chat calls in parallel; return {text: parsed} for every input text."""
+    unique = list(dict.fromkeys(texts))
+    missing = [t for t in unique if cache.get(section, _key(model, t)) is None]
+    if missing:
+        n = max(1, workers if workers is not None else CHAT_WORKERS)
+
+        def one(text: str) -> tuple[str, dict]:
+            hit = llm.chat(
+                model, [{"role": "system", "content": system}, {"role": "user", "content": text}], schema=schema
+            ).parsed
+            return text, hit
+
+        done = 0
+        with ThreadPoolExecutor(max_workers=min(n, len(missing)), thread_name_prefix="slm-chat") as pool:
+            futures = [pool.submit(one, t) for t in missing]
+            for fut in as_completed(futures):
+                text, hit = fut.result()
+                cache.put(section, _key(model, text), hit)
+                done += 1
+                # Keep partial progress if the sync is interrupted mid-batch.
+                if done == len(missing) or done % 32 == 0:
+                    cache.save()
+                    log.info("SLM %s: %d / %d", section, done, len(missing))
+    return {t: cache.get(section, _key(model, t)) for t in unique}
 
 
 def _embed(texts: list[str], cache: FeatureCache, model: str) -> np.ndarray:
@@ -134,12 +168,13 @@ def _cluster_topics(english: list[str], cache: FeatureCache, embed_model: str, l
     for idx, lab in enumerate(labels):
         groups.setdefault(int(lab), []).append(idx)
 
+    clusters = [(members, [unique[i] for i in members]) for members in sorted(groups.values(), key=lambda m: unique[m[0]])]
+    samples = ["\n".join(f"- {t}" for t in texts[:15]) for _, texts in clusters]
+    labels = _cached_chats(cache, "topic_label", label_model, LABEL_SYSTEM, samples, LABEL_SCHEMA)
+
     mapping, centroids, used = {}, {}, set()
-    for members in sorted(groups.values(), key=lambda m: unique[m[0]]):
-        texts = [unique[i] for i in members]
-        sample = "\n".join(f"- {t}" for t in texts[:15])
-        label = _cached_chat(cache, "topic_label", label_model, LABEL_SYSTEM, sample, LABEL_SCHEMA)["label"]
-        label = label.strip().strip(".") or texts[0][:40]
+    for (members, texts), sample in zip(clusters, samples, strict=False):
+        label = (labels[sample].get("label") or "").strip().strip(".") or texts[0][:40]
         base, n = label, 2
         while label in used:
             label, n = f"{base} {n}", n + 1
@@ -174,15 +209,21 @@ def add_slm_features(df: pd.DataFrame, cache_path: Path | None = None, strict: b
     cache = FeatureCache(cache_path or CACHE_DIR / "slm_features.json")
     model, embed_model = cfg["data_processing_model"], cfg["embedding_model"]
     try:
-        norm = {p: _cached_chat(cache, "normalise", model, NORMALISE_SYSTEM, p, NORMALISE_SCHEMA) for p in df["prompt"].unique()}
-        df["prompt_english"] = df["prompt"].map(lambda p: norm[p]["english"].strip() or p)
+        prompts = [p for p in df["prompt"].unique() if p is not None]
+        norm = _cached_chats(cache, "normalise", model, NORMALISE_SYSTEM, prompts, NORMALISE_SCHEMA)
+        cache.save()
+        df["prompt_english"] = df["prompt"].map(lambda p: (norm[p]["english"] or "").strip() or p)
         df["intent"] = df["prompt"].map(lambda p: norm[p]["intent"])
 
         topics, centroids = _cluster_topics(list(df["prompt_english"]), cache, embed_model, model)
+        cache.save()
         df["topic"] = df["prompt_english"].map(topics)
 
         outputs = [o for o in df["output_text"].unique() if o]
-        out_en = {o: _cached_chat(cache, "translate", model, TRANSLATE_SYSTEM, o[:2000], TRANSLATE_SCHEMA)["english"] or o for o in outputs}
+        translated = _cached_chats(
+            cache, "translate", model, TRANSLATE_SYSTEM, [o[:2000] for o in outputs], TRANSLATE_SCHEMA
+        )
+        out_en = {o: (translated[o[:2000]].get("english") or o) for o in outputs}
         out_vecs = _embed([out_en[o] for o in outputs], cache, embed_model)
         names = list(centroids)
         sims = out_vecs @ np.stack([centroids[n] for n in names]).T
