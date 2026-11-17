@@ -16,7 +16,7 @@ import {
   YAxis,
 } from 'recharts'
 // Add AlignmentCell back to this import when the alignment matrix is re-enabled.
-import type { Filters, Granularity, Summary } from '../api'
+import type { BreakdownRow, Filters, Granularity, Summary } from '../api'
 import { api, emptyFilters } from '../api'
 import { Card, Loadable, Segmented } from '../components/Card'
 import { DataTableView } from '../components/DataTableView'
@@ -27,6 +27,45 @@ import { useAsync } from '../useAsync'
 
 const AXIS = { fontSize: 11, fill: '#64748b' }
 const GRID = <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" vertical={false} />
+
+/** Top languages as pie slices; the rest are grouped so the legend stays inside the card. */
+function LanguageChart({ rows }: { rows: BreakdownRow[] }) {
+  const sorted = [...rows].sort((a, b) => b.prompts - a.prompts)
+  const top = sorted.slice(0, 6)
+  const rest = sorted.slice(6)
+  const slices = [
+    ...top.map((r) => ({ name: language(String(r.key ?? 'unknown')), prompts: r.prompts })),
+    ...(rest.length
+      ? [{ name: `Other (${rest.length})`, prompts: rest.reduce((s, r) => s + r.prompts, 0) }]
+      : []),
+  ]
+  return (
+    <div className="space-y-3">
+      <div className="h-[220px] w-full">
+        <ResponsiveContainer width="100%" height="100%">
+          <PieChart margin={{ top: 8, right: 8, bottom: 8, left: 8 }}>
+            <Pie isAnimationActive={false} data={slices} dataKey="prompts" nameKey="name" innerRadius={52} outerRadius={78} paddingAngle={2}>
+              {slices.map((s, i) => (
+                <Cell key={s.name} fill={PALETTE[i % PALETTE.length]} />
+              ))}
+            </Pie>
+            <Tooltip formatter={(v) => number(v)} />
+          </PieChart>
+        </ResponsiveContainer>
+      </div>
+      <ul className="flex flex-wrap gap-x-3 gap-y-1.5 text-xs text-slate-600">
+        {slices.map((s, i) => (
+          <li key={s.name} className="flex min-w-0 items-center gap-1.5">
+            <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: PALETTE[i % PALETTE.length] }} />
+            <span>
+              {s.name} · {number(s.prompts)}
+            </span>
+          </li>
+        ))}
+      </ul>
+    </div>
+  )
+}
 
 const BREAKDOWNS = [
   { value: 'app', label: 'App' },
@@ -231,21 +270,7 @@ export function Dashboard() {
           </Loadable>
         </Card>
         <Card title="Prompt languages">
-          <Loadable state={languages}>
-            {(rows) => (
-              <ResponsiveContainer width="100%" height={240}>
-                <PieChart>
-                  <Pie isAnimationActive={false} data={rows.map((r) => ({ ...r, name: language(String(r.key)) }))} dataKey="prompts" nameKey="name" innerRadius={55} outerRadius={90} paddingAngle={2}>
-                    {rows.map((_, i) => (
-                      <Cell key={i} fill={PALETTE[i % PALETTE.length]} />
-                    ))}
-                  </Pie>
-                  <Tooltip />
-                  <Legend iconType="circle" wrapperStyle={{ fontSize: 12 }} />
-                </PieChart>
-              </ResponsiveContainer>
-            )}
-          </Loadable>
+          <Loadable state={languages}>{(rows) => <LanguageChart rows={rows} />}</Loadable>
         </Card>
       </div>
 

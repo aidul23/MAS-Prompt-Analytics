@@ -1,4 +1,20 @@
-const LANGUAGES: Record<string, string> = { en: 'English', fi: 'Finnish', sv: 'Swedish' }
+const LANGUAGES: Record<string, string> = {
+  en: 'English',
+  fi: 'Finnish',
+  sv: 'Swedish',
+  de: 'German',
+  fr: 'French',
+  no: 'Norwegian',
+  et: 'Estonian',
+  da: 'Danish',
+  es: 'Spanish',
+  it: 'Italian',
+  pt: 'Portuguese',
+  nl: 'Dutch',
+  pl: 'Polish',
+  ru: 'Russian',
+  unknown: 'Unknown',
+}
 
 export const language = (code: string) => LANGUAGES[code] ?? code
 
