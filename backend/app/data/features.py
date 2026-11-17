@@ -16,9 +16,11 @@ import json
 import logging
 import os
 import threading
+import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
+import httpx
 import numpy as np
 import pandas as pd
 from langdetect import DetectorFactory, LangDetectException, detect_langs
@@ -34,8 +36,42 @@ EXPECTED_LANGUAGES = ("en", "fi", "sv")
 INTENTS = ("how_to", "explanation", "examples", "best_practices", "design_help", "troubleshooting", "other")
 TOPIC_DISTANCE_THRESHOLD = 0.15
 EMBED_PREFIX = "clustering: "
-# Concurrent Ollama chat calls during sync. Raise with MAS_CHAT_WORKERS if the GPU keeps up.
-CHAT_WORKERS = max(1, int(os.environ.get("MAS_CHAT_WORKERS", "8")))
+# Fewer workers reduce Ollama queue wait (which was hitting the old 5-minute HTTP timeout).
+CHAT_WORKERS = max(1, int(os.environ.get("MAS_CHAT_WORKERS", "4")))
+FEATURE_CHAT_TIMEOUT = float(os.environ.get("MAS_FEATURE_CHAT_TIMEOUT", "900"))
+FEATURE_CHAT_RETRIES = max(1, int(os.environ.get("MAS_FEATURE_CHAT_RETRIES", "3")))
+
+_STAGE_LABELS = {
+    "normalise": "Analysing prompts",
+    "topic_label": "Labelling topics",
+    "translate": "Translating answers",
+    "embed": "Embedding texts",
+    "building": "Building database",
+}
+_progress_lock = threading.Lock()
+_progress: dict | None = None
+
+
+def get_progress() -> dict | None:
+    with _progress_lock:
+        return dict(_progress) if _progress else None
+
+
+def set_progress(stage: str, done: int = 0, total: int = 0, **extra) -> None:
+    label = _STAGE_LABELS.get(stage, stage.replace("_", " ").title())
+    if total > 0:
+        message = f"{label}: {done:,} / {total:,}"
+    else:
+        message = label
+    with _progress_lock:
+        global _progress
+        _progress = {"stage": stage, "label": label, "done": done, "total": total, "message": message, **extra}
+
+
+def clear_progress() -> None:
+    with _progress_lock:
+        global _progress
+        _progress = None
 
 
 def detect_language(text: str) -> str:
@@ -119,37 +155,56 @@ def _cached_chats(
 ) -> dict[str, dict]:
     """Run uncached chat calls in parallel; return {text: parsed} for every input text."""
     unique = list(dict.fromkeys(texts))
+    cached = len(unique)
     missing = [t for t in unique if cache.get(section, _key(model, t)) is None]
+    cached -= len(missing)
+    set_progress(section, done=cached, total=len(unique))
     if missing:
         n = max(1, workers if workers is not None else CHAT_WORKERS)
+        timeout = httpx.Timeout(FEATURE_CHAT_TIMEOUT, connect=5.0)
 
         def one(text: str) -> tuple[str, dict]:
-            hit = llm.chat(
-                model, [{"role": "system", "content": system}, {"role": "user", "content": text}], schema=schema
-            ).parsed
-            return text, hit
+            last: Exception | None = None
+            for attempt in range(FEATURE_CHAT_RETRIES):
+                try:
+                    hit = llm.chat(
+                        model,
+                        [{"role": "system", "content": system}, {"role": "user", "content": text}],
+                        schema=schema,
+                        timeout=timeout,
+                    ).parsed
+                    return text, hit
+                except llm.LLMError as exc:
+                    last = exc
+                    log.warning("SLM %s attempt %d/%d failed: %s", section, attempt + 1, FEATURE_CHAT_RETRIES, exc)
+                    time.sleep(1.5 * (attempt + 1))
+            assert last is not None
+            raise last
 
-        done = 0
+        done = cached
         with ThreadPoolExecutor(max_workers=min(n, len(missing)), thread_name_prefix="slm-chat") as pool:
             futures = [pool.submit(one, t) for t in missing]
             for fut in as_completed(futures):
                 text, hit = fut.result()
                 cache.put(section, _key(model, text), hit)
                 done += 1
+                set_progress(section, done=done, total=len(unique))
                 # Keep partial progress if the sync is interrupted mid-batch.
-                if done == len(missing) or done % 32 == 0:
+                if done == len(unique) or (done - cached) % 16 == 0:
                     cache.save()
-                    log.info("SLM %s: %d / %d", section, done, len(missing))
+                    log.info("SLM %s: %d / %d", section, done, len(unique))
     return {t: cache.get(section, _key(model, t)) for t in unique}
 
 
 def _embed(texts: list[str], cache: FeatureCache, model: str) -> np.ndarray:
     keys = [_key(model, t) for t in texts]
     missing = [(k, t) for k, t in zip(keys, texts, strict=False) if cache.get("embedding", k) is None]
+    set_progress("embed", done=len(keys) - len(missing), total=len(keys))
     for i in range(0, len(missing), 64):
         batch = missing[i : i + 64]
         for (k, _), vec in zip(batch, llm.embed(model, [EMBED_PREFIX + t for _, t in batch]), strict=False):
             cache.put("embedding", k, vec)
+        set_progress("embed", done=len(keys) - len(missing) + min(i + 64, len(missing)), total=len(keys))
     vecs = np.array([cache.get("embedding", k) for k in keys], dtype=float)
     return vecs / np.linalg.norm(vecs, axis=1, keepdims=True)
 
@@ -236,6 +291,7 @@ def add_slm_features(df: pd.DataFrame, cache_path: Path | None = None, strict: b
         df["response_similarity"] = [
             round(out_sim[o][t], 4) if o in out_sim else None for o, t in zip(df["output_text"], df["topic"], strict=False)
         ]
+        set_progress("building")
     except llm.LLMError as exc:
         if strict:
             raise

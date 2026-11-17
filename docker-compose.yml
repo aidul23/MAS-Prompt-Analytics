@@ -7,8 +7,10 @@ services:
     build: ./backend
     environment:
       OLLAMA_URL: ${OLLAMA_URL:-http://host.docker.internal:11434}
-      # Concurrent Ollama calls while analysing uploaded traces (default 8 in the API).
-      MAS_CHAT_WORKERS: ${MAS_CHAT_WORKERS:-8}
+      # Concurrent Ollama calls while analysing uploaded traces. Keep modest so requests
+      # do not sit in Ollama's queue long enough to hit the HTTP timeout.
+      MAS_CHAT_WORKERS: ${MAS_CHAT_WORKERS:-4}
+      MAS_FEATURE_CHAT_TIMEOUT: ${MAS_FEATURE_CHAT_TIMEOUT:-900}
     extra_hosts:
       - host.docker.internal:host-gateway
     volumes:

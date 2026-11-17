@@ -43,6 +43,7 @@ def chat(
     temperature: float = 0.0,
     num_ctx: int = 4096,
     max_tokens: int | None = None,
+    timeout: float | httpx.Timeout | None = None,
 ) -> LLMResult:
     options: dict[str, Any] = {"temperature": temperature, "num_ctx": num_ctx, "seed": 7}
     if max_tokens:
@@ -52,7 +53,7 @@ def chat(
         body["format"] = schema
     t0 = time.perf_counter()
     try:
-        resp = _client.post("/api/chat", json=body)
+        resp = _client.post("/api/chat", json=body, timeout=timeout)
         resp.raise_for_status()
     except httpx.HTTPError as exc:
         raise LLMError(f"Ollama call to {model} failed: {exc}") from exc

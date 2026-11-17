@@ -166,11 +166,20 @@ export type SyncRun = {
   message: string | null
 }
 
+export type SyncProgress = {
+  stage: string
+  label: string
+  done: number
+  total: number
+  message: string
+}
+
 export type DataStatus = {
   data: { start: string; end: string; rows: number } | null
   version: string | null
   running: boolean
   last_sync: SyncRun | null
+  progress: SyncProgress | null
 }
 
 export type SourceFile = { id: string; name: string; size: number; rows: number; added_at: string; missing: boolean }

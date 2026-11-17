@@ -37,6 +37,8 @@ function SyncBadge({ status }: { status: SyncRun['status'] }) {
 
 function StatusCard({ status, onSync, busy }: { status: DataStatus | null; onSync: () => void; busy: boolean }) {
   const last = status?.last_sync
+  const progress = status?.running ? status.progress : null
+  const pct = progress && progress.total > 0 ? Math.min(100, Math.round((100 * progress.done) / progress.total)) : null
   return (
     <section className={card}>
       <div className="flex flex-wrap items-start justify-between gap-4">
@@ -63,6 +65,23 @@ function StatusCard({ status, onSync, busy }: { status: DataStatus | null; onSyn
           {status?.running ? 'Syncing…' : 'Sync now'}
         </button>
       </div>
+      {progress && (
+        <div className="mt-4 rounded-lg border border-amber-100 bg-amber-50/70 px-3 py-3">
+          <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-amber-900">
+            <span className="font-medium">{progress.message}</span>
+            {pct !== null && <span className="tabular-nums">{pct}%</span>}
+          </div>
+          <div className="mt-2 h-2 overflow-hidden rounded-full bg-amber-100">
+            <div
+              className="h-full rounded-full bg-amber-500 transition-[width] duration-500"
+              style={{ width: `${pct ?? (progress.stage === 'building' ? 95 : 8)}%` }}
+            />
+          </div>
+          <p className="mt-2 text-[11px] text-amber-800/80">
+            Large uploads are analysed by the local model. Progress is saved as it goes, so a retry continues from where it stopped.
+          </p>
+        </div>
+      )}
       {last && (
         <div className="mt-4 flex flex-wrap items-center gap-2 border-t border-slate-100 pt-3 text-xs text-slate-600">
           <SyncBadge status={status?.running ? 'running' : last.status} />
@@ -70,7 +89,7 @@ function StatusCard({ status, onSync, busy }: { status: DataStatus | null; onSyn
             Last sync {when(last.finished_at ?? last.started_at)} ({last.trigger})
           </span>
           {last.status === 'ok' && last.new_traces !== null && <span>· {last.new_traces} new traces</span>}
-          {last.status === 'error' && <span className="text-red-600">· {last.message}</span>}
+          {last.status === 'error' && !status?.running && <span className="text-red-600">· {last.message}</span>}
         </div>
       )}
     </section>

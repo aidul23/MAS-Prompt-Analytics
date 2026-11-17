@@ -46,3 +46,29 @@ def test_cached_chats_runs_uncached_calls_in_parallel(tmp_path: Path, monkeypatc
     monkeypatch.setattr(features.llm, "chat", no_chat)
     again = features._cached_chats(cache, "normalise", "fake", features.NORMALISE_SYSTEM, texts, features.NORMALISE_SCHEMA, workers=6)
     assert again == out and calls["n"] == 0
+
+
+def test_cached_chats_retries_timeouts(tmp_path: Path, monkeypatch):
+    attempts = {"n": 0}
+
+    def flaky(model, messages, *, schema=None, **_):
+        attempts["n"] += 1
+        if attempts["n"] < 3:
+            raise llm.LLMError("Ollama call to fake failed: timed out")
+        text = messages[-1]["content"]
+        return llm.LLMResult(
+            content="{}",
+            call=llm.LLMCall(model=model, latency_s=0.01, prompt_tokens=1, completion_tokens=1),
+            parsed={"english": text, "intent": "other"},
+        )
+
+    monkeypatch.setattr(features.llm, "chat", flaky)
+    monkeypatch.setattr(features, "FEATURE_CHAT_RETRIES", 3)
+    monkeypatch.setattr(features.time, "sleep", lambda _s: None)
+    cache = features.FeatureCache(tmp_path / "cache.json")
+    out = features._cached_chats(cache, "normalise", "fake", features.NORMALISE_SYSTEM, ["hello"], features.NORMALISE_SCHEMA, workers=1)
+    assert out["hello"]["english"] == "hello"
+    assert attempts["n"] == 3
+    prog = features.get_progress()
+    assert prog and prog["stage"] == "normalise" and prog["done"] == 1
+    features.clear_progress()

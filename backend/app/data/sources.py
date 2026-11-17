@@ -20,7 +20,7 @@ from pathlib import Path
 
 from app import llm
 from app.config import DATA_DIR, DB_PATH, RAW_CSV, SOURCES_DB, SOURCES_DIR
-from app.data import context, loader, pipeline, store
+from app.data import context, features, loader, pipeline, store
 
 log = logging.getLogger(__name__)
 
@@ -324,6 +324,7 @@ def run_sync(trigger: str, *, scan: bool = True, use_slm: bool = True, sync_id: 
         before = _current_ids()
         if paths:
             tmp.unlink(missing_ok=True)
+            features.set_progress("building")
             report = pipeline.build(paths=paths, db_path=tmp, use_slm=use_slm, strict_slm=True)
             store.replace_database(tmp)
             notes.append(f"Built in {report['build_seconds']} s")
@@ -345,6 +346,7 @@ def run_sync(trigger: str, *, scan: bool = True, use_slm: bool = True, sync_id: 
         tmp.unlink(missing_ok=True)
         result = {"status": "error", "message": "; ".join(notes + [str(exc)])}
     finally:
+        features.clear_progress()
         _sync_lock.release()
     with _connect() as con:
         con.execute(
@@ -389,7 +391,14 @@ def status() -> dict:
         except Exception:
             data = None
     syncs = list_syncs(1)
-    return {"data": data, "version": store.version(), "running": _sync_lock.locked(), "last_sync": syncs[0] if syncs else None}
+    running = _sync_lock.locked()
+    return {
+        "data": data,
+        "version": store.version(),
+        "running": running,
+        "last_sync": syncs[0] if syncs else None,
+        "progress": features.get_progress() if running else None,
+    }
 
 
 def mark_interrupted() -> None:
